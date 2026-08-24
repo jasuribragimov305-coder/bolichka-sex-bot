@@ -98,6 +98,36 @@ async function saveNewStoreAndContinue(ctx, s, location) {
   await ctx.reply("Qaysi mahsulot?", Markup.inlineKeyboard(kb));
 }
 
+/** Do'kon tahrirlash oqimida yig'ilgan maydonlarni yozadi (faqat kiritilgan
+ * qiymatlarni — "-" bilan o'tkazib yuborilganlar eskicha qoladi) va sotuv
+ * oqimini mahsulot tanlashga qaytaradi. */
+async function saveStoreEditAndContinue(ctx, s, location) {
+  const edit = s.draft.editStore || {};
+  const update = {};
+  if (edit.name !== undefined) update.name = edit.name;
+  if (edit.address !== undefined) update.address = edit.address;
+  if (edit.ownerName !== undefined) update.ownerName = edit.ownerName;
+  if (edit.ownerPhone !== undefined) update.ownerPhone = edit.ownerPhone;
+  if (location) update.location = location;
+  if (Object.keys(update).length > 0) {
+    await db.collection("stores").doc(edit.id).update(update);
+  }
+  const driverLoadId = s.draft.driverLoadId;
+  s.draft = driverLoadId ? { driverLoadId, storeId: edit.id } : {};
+  s.step = null;
+  await ctx.reply("✅ Do'kon ma'lumoti yangilandi.", Markup.removeKeyboard());
+  if (driverLoadId) {
+    const dl = await myDriverLoad(s.employee.uid);
+    if (dl) {
+      const named = await Promise.all(dl.items.map(async (i) => ({ productId: i.productId, name: await productName(i.productId) })));
+      const kb = grid(named, (i) => Markup.button.callback(i.name, `sale:prod:${i.productId}`));
+      await ctx.reply("Qaysi mahsulot?", Markup.inlineKeyboard(kb));
+    }
+  } else {
+    await ctx.reply("Menyu:", mainMenuFor(s.employee.role));
+  }
+}
+
 function register(bot) {
   // ---- bugungi mashinam ----
   bot.action("drv:vehicle", async (ctx) => {
@@ -218,17 +248,33 @@ function register(bot) {
     s.draft.storeId = ctx.match[1];
     await ctx.answerCbQuery();
     const storeDoc = await db.collection("stores").doc(s.draft.storeId).get();
-    const loc = storeDoc.exists ? storeDoc.data().location : null;
-    if (loc) {
-      await ctx.reply(
-        "🧭 Yo'nalish kerak bo'lsa:",
-        Markup.inlineKeyboard([[Markup.button.url("Xaritada ochish", `https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}`)]]),
-      );
-    }
+    const store = storeDoc.exists ? storeDoc.data() : null;
+    const loc = store ? store.location : null;
+    const row = [];
+    if (loc) row.push(Markup.button.url("🧭 Yo'nalish", `https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}`));
+    row.push(Markup.button.callback("✎ Tahrirlash", "store:edit"));
+    await ctx.reply(`Tanlangan do'kon: ${store ? store.name : ""}`, Markup.inlineKeyboard([row]));
     const dl = await myDriverLoad(s.employee.uid);
     const named = await Promise.all(dl.items.map(async (i) => ({ productId: i.productId, name: await productName(i.productId) })));
     const kb = grid(named, (i) => Markup.button.callback(i.name, `sale:prod:${i.productId}`));
     await ctx.reply("Qaysi mahsulot?", Markup.inlineKeyboard(kb));
+  });
+
+  // ---- tanlangan do'konni tahrirlash ----
+  bot.action("store:edit", async (ctx) => {
+    await ctx.answerCbQuery();
+    const s = getSession(ctx.chat.id);
+    const storeId = s.draft.storeId;
+    if (!storeId) return;
+    const doc = await db.collection("stores").doc(storeId).get();
+    if (!doc.exists) {
+      await ctx.reply("Do'kon topilmadi.");
+      return;
+    }
+    const store = doc.data();
+    s.draft.editStore = { id: storeId };
+    s.step = "storeEdit.name";
+    await ctx.reply(`Nomi (hozirgi: "${store.name}"). Yangisini yozing, o'zgarishsiz qoldirish uchun "-":`);
   });
 
   bot.action(/^sale:prod:(.+)$/, async (ctx) => {
@@ -425,6 +471,42 @@ function register(bot) {
         return true;
       }
 
+      if (s.step === "storeEdit.name") {
+        if (text !== "-") s.draft.editStore.name = text;
+        s.step = "storeEdit.address";
+        await ctx.reply("Mo'ljal/manzil — yangisini yozing, o'zgarishsiz qoldirish uchun \"-\":");
+        return true;
+      }
+      if (s.step === "storeEdit.address") {
+        if (text !== "-") s.draft.editStore.address = text;
+        s.step = "storeEdit.owner_name";
+        await ctx.reply("Magazinchi ismi — yangisini yozing, o'zgarishsiz qoldirish uchun \"-\":");
+        return true;
+      }
+      if (s.step === "storeEdit.owner_name") {
+        if (text !== "-") s.draft.editStore.ownerName = text;
+        s.step = "storeEdit.owner_phone";
+        await ctx.reply("Magazinchi raqami — yangisini yozing, o'zgarishsiz qoldirish uchun \"-\":");
+        return true;
+      }
+      if (s.step === "storeEdit.owner_phone") {
+        if (text !== "-") s.draft.editStore.ownerPhone = text;
+        s.step = "storeEdit.location";
+        await ctx.reply(
+          "Joylashuvni yangilamoqchimisiz? Pastdagi tugma bilan yuboring, o'zgarishsiz qoldirish uchun \"-\" deb yozing.",
+          Markup.keyboard([[Markup.button.locationRequest("📍 Joylashuvni yuborish")]]).resize().oneTime(),
+        );
+        return true;
+      }
+      if (s.step === "storeEdit.location") {
+        if (text === "-") {
+          await saveStoreEditAndContinue(ctx, s, null);
+        } else {
+          await ctx.reply("Iltimos, \"📍 Joylashuvni yuborish\" tugmasini bosing yoki \"-\" deb yozing.");
+        }
+        return true;
+      }
+
       if (s.step === "sale.qty") {
         const qty = Number(text.replace(",", "."));
         if (!Number.isFinite(qty) || qty <= 0) {
@@ -553,10 +635,16 @@ function register(bot) {
     },
 
     async handleLocation(ctx, s) {
-      if (s.step !== "store.location" || !s.draft.newStore) return false;
       const { latitude, longitude } = ctx.message.location;
-      await saveNewStoreAndContinue(ctx, s, { lat: latitude, lng: longitude });
-      return true;
+      if (s.step === "store.location" && s.draft.newStore) {
+        await saveNewStoreAndContinue(ctx, s, { lat: latitude, lng: longitude });
+        return true;
+      }
+      if (s.step === "storeEdit.location" && s.draft.editStore) {
+        await saveStoreEditAndContinue(ctx, s, { lat: latitude, lng: longitude });
+        return true;
+      }
+      return false;
     },
   };
 }
