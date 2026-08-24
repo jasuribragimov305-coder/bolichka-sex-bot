@@ -13,6 +13,14 @@ if (useEmulator) {
   // hisobi orqali avtomatik ishonch bilan ulanadi, alohida kalit fayli
   // konteynerga qo'shilishi shart emas (xavfsizroq).
   admin.initializeApp({ projectId });
+} else if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+  // Render/Railway kabi Google-siz platformalar uchun — xizmat hisobi
+  // kaliti fayl emas, environment variable ichida to'liq JSON matn
+  // sifatida beriladi (kalit faylni kodga qo'shmaslik uchun).
+  admin.initializeApp({
+    projectId,
+    credential: admin.credential.cert(JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON)),
+  });
 } else {
   // Mahalliy kompyuterdan haqiqiy loyihaga ulanish uchun Admin SDK'ga
   // xizmat hisobi kaliti kerak. .env'dagi nisbiy yo'l bot papkasiga
