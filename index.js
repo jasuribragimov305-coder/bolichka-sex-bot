@@ -9,6 +9,11 @@ const fasovkachi = require("./src/flows/fasovkachi");
 const sotuvchi = require("./src/flows/sotuvchi");
 const kassir = require("./src/flows/kassir");
 const adminFlow = require("./src/flows/admin");
+const { runKassaCheck } = require("./src/kassaCheck");
+
+// Tashqi (GitHub Actions) cron shu maxfiy so'z bilan har kuni soat 20:00'da
+// /cron/kassa-check'ni chaqiradi — hech qanday pullik xizmat kerak emas.
+const CRON_SECRET = "fccd19e4c726d4ea339cd7ee0b59485f588d86bc8bd0c872";
 
 const token = process.env.BOT_TOKEN;
 if (!token) {
@@ -87,6 +92,24 @@ if (port) {
     }
     if (req.url === webhookPath && req.method === "POST") {
       return bot.webhookCallback(webhookPath)(req, res);
+    }
+    if (req.url.startsWith("/cron/kassa-check")) {
+      const reqUrl = new URL(req.url, `http://${req.headers.host}`);
+      if (reqUrl.searchParams.get("secret") !== CRON_SECRET) {
+        res.writeHead(403);
+        res.end();
+        return;
+      }
+      try {
+        await runKassaCheck(bot);
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("ok");
+      } catch (err) {
+        console.error("Kassa nazorati xatoligi:", err);
+        res.writeHead(500);
+        res.end("error");
+      }
+      return;
     }
     res.writeHead(404);
     res.end();
