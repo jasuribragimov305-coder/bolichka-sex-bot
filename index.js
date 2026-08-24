@@ -58,6 +58,13 @@ bot.on("text", async (ctx) => {
   await ctx.reply("Menyudan tanlang: /menu");
 });
 
+bot.on("location", async (ctx) => {
+  const s = getSession(ctx.chat.id);
+  if (!s.employee || !s.step) return;
+  const roleHandler = roleHandlers[s.employee.role];
+  if (roleHandler && roleHandler.handleLocation) await roleHandler.handleLocation(ctx, s);
+});
+
 bot.catch((err, ctx) => {
   console.error("Bot xatoligi:", err);
   ctx.reply("⚠️ Xatolik yuz berdi. /menu orqali qaytadan urinib ko'ring.").catch(() => {});

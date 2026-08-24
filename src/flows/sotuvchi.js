@@ -74,6 +74,30 @@ async function confirmWorkOrder({ workOrderId, driverUid, vehicleId, productId, 
   });
 }
 
+/** Yig'ilgan do'kon ma'lumotini Firestore'ga yozadi va sotuv oqimini
+ * mahsulot tanlashga qaytaradi — mobil ilovadagi "yangi savdo nuqtasi
+ * qo'shish" bilan bir xil xatti-harakat (yangi do'kon avtomatik tanlanadi). */
+async function saveNewStoreAndContinue(ctx, s, location) {
+  const draft = s.draft.newStore || {};
+  const ref = await db.collection("stores").add({
+    name: draft.name || "",
+    address: draft.address || "",
+    ownerName: draft.ownerName || "",
+    ownerPhone: draft.ownerPhone || "",
+    debt: 0,
+    location,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  const driverLoadId = s.draft.driverLoadId;
+  s.draft = { driverLoadId, storeId: ref.id };
+  s.step = null;
+  await ctx.reply("✅ Do'kon qo'shildi.", Markup.removeKeyboard());
+  const dl = await myDriverLoad(s.employee.uid);
+  const named = await Promise.all(dl.items.map(async (i) => ({ productId: i.productId, name: await productName(i.productId) })));
+  const kb = grid(named, (i) => Markup.button.callback(i.name, `sale:prod:${i.productId}`));
+  await ctx.reply("Qaysi mahsulot?", Markup.inlineKeyboard(kb));
+}
+
 function register(bot) {
   // ---- bugungi mashinam ----
   bot.action("drv:vehicle", async (ctx) => {
@@ -172,12 +196,21 @@ function register(bot) {
     }
     s.draft = { driverLoadId: dl.id };
     const stores = await listStores();
-    if (stores.length === 0) {
-      await ctx.reply("Hali do'kon yo'q.");
-      return;
-    }
     const kb = grid(stores, (st) => Markup.button.callback(st.name, `sale:store:${st.id}`));
-    await ctx.reply("Qaysi do'konga sotdingiz?", Markup.inlineKeyboard(kb));
+    kb.push([Markup.button.callback("➕ Yangi do'kon qo'shish", "store:new")]);
+    await ctx.reply(
+      stores.length === 0 ? "Hali do'kon yo'q — yangisini qo'shing:" : "Qaysi do'konga sotdingiz?",
+      Markup.inlineKeyboard(kb),
+    );
+  });
+
+  // ---- yangi do'kon qo'shish (sotuv oqimi ichidan) ----
+  bot.action("store:new", async (ctx) => {
+    await ctx.answerCbQuery();
+    const s = getSession(ctx.chat.id);
+    s.draft.newStore = {};
+    s.step = "store.name";
+    await ctx.reply("Yangi do'kon nomini yozing:");
   });
 
   bot.action(/^sale:store:(.+)$/, async (ctx) => {
@@ -344,6 +377,46 @@ function register(bot) {
         return true;
       }
 
+      if (s.step === "store.name") {
+        if (!text || text === "-") {
+          await ctx.reply("Do'kon nomini kiriting:");
+          return true;
+        }
+        s.draft.newStore.name = text;
+        s.step = "store.address";
+        await ctx.reply("Mo'ljal / manzil yozing (bo'lmasa \"-\"):");
+        return true;
+      }
+      if (s.step === "store.address") {
+        s.draft.newStore.address = text === "-" ? "" : text;
+        s.step = "store.owner_name";
+        await ctx.reply("Magazinchi ismi (bo'lmasa \"-\"):");
+        return true;
+      }
+      if (s.step === "store.owner_name") {
+        s.draft.newStore.ownerName = text === "-" ? "" : text;
+        s.step = "store.owner_phone";
+        await ctx.reply("Magazinchi raqami (bo'lmasa \"-\"):");
+        return true;
+      }
+      if (s.step === "store.owner_phone") {
+        s.draft.newStore.ownerPhone = text === "-" ? "" : text;
+        s.step = "store.location";
+        await ctx.reply(
+          "Endi do'kon joylashuvini yuboring — pastdagi tugmani bosing. Joylashuvsiz davom etish uchun \"-\" deb yozing.",
+          Markup.keyboard([[Markup.button.locationRequest("📍 Joylashuvni yuborish")]]).resize().oneTime(),
+        );
+        return true;
+      }
+      if (s.step === "store.location") {
+        if (text === "-") {
+          await saveNewStoreAndContinue(ctx, s, null);
+        } else {
+          await ctx.reply("Iltimos, \"📍 Joylashuvni yuborish\" tugmasini bosing yoki \"-\" deb yozing.");
+        }
+        return true;
+      }
+
       if (s.step === "sale.qty") {
         const qty = Number(text.replace(",", "."));
         if (!Number.isFinite(qty) || qty <= 0) {
@@ -469,6 +542,13 @@ function register(bot) {
       }
 
       return false;
+    },
+
+    async handleLocation(ctx, s) {
+      if (s.step !== "store.location" || !s.draft.newStore) return false;
+      const { latitude, longitude } = ctx.message.location;
+      await saveNewStoreAndContinue(ctx, s, { lat: latitude, lng: longitude });
+      return true;
     },
   };
 }
