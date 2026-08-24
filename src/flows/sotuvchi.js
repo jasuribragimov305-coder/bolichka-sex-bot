@@ -217,6 +217,14 @@ function register(bot) {
     const s = getSession(ctx.chat.id);
     s.draft.storeId = ctx.match[1];
     await ctx.answerCbQuery();
+    const storeDoc = await db.collection("stores").doc(s.draft.storeId).get();
+    const loc = storeDoc.exists ? storeDoc.data().location : null;
+    if (loc) {
+      await ctx.reply(
+        "🧭 Yo'nalish kerak bo'lsa:",
+        Markup.inlineKeyboard([[Markup.button.url("Xaritada ochish", `https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}`)]]),
+      );
+    }
     const dl = await myDriverLoad(s.employee.uid);
     const named = await Promise.all(dl.items.map(async (i) => ({ productId: i.productId, name: await productName(i.productId) })));
     const kb = grid(named, (i) => Markup.button.callback(i.name, `sale:prod:${i.productId}`));
