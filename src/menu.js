@@ -18,12 +18,14 @@ function mainMenuFor(role) {
     rows.push([Markup.button.callback("🚚 Yuklash yozish", "load:start")]);
     rows.push([Markup.button.callback("📋 Menga tayinlangan zayavkalar", "wo:mine")]);
     rows.push([Markup.button.callback("🏭 Sotuvchilar so'rovlari", "wo:pool")]);
+    rows.push([Markup.button.callback("🗓 Kelgusi zakazlar", "preorder:pool")]);
     rows.push([Markup.button.callback("📊 Bugungi natijam", "pack:today")]);
   } else if (role === "haydovchi") {
     rows.push([Markup.button.callback("🚗 Bugungi mashinam", "drv:vehicle")]);
     rows.push([Markup.button.callback("🏭 Sexdan mahsulot so'rash", "cex:start")]);
     rows.push([Markup.button.callback("📥 Ortilgan zayavkalar", "wo:driver")]);
     rows.push([Markup.button.callback("🛒 Sotuv yozish", "sale:start")]);
+    rows.push([Markup.button.callback("📝 Oldindan zakaz olish", "preorder:start")]);
     rows.push([Markup.button.callback("🗑 Brak yozish", "brak:start")]);
     rows.push([Markup.button.callback("💸 Xarajat yozish", "exp:start")]);
     rows.push([Markup.button.callback("↩️ Vazvrat (qaytgan mahsulot)", "ret:start")]);

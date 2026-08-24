@@ -131,6 +131,34 @@ function register(bot) {
     await ctx.editMessageReplyMarkup(null).catch(() => {});
   });
 
+  // ---- kelgusi zakazlar (sotuvchilar oldindan olgan) ----
+  async function storeName(id) {
+    const doc = await db.collection("stores").doc(id).get();
+    return doc.exists ? doc.data().name : id;
+  }
+
+  bot.action("preorder:pool", async (ctx) => {
+    await ctx.answerCbQuery();
+    const snap = await db.collection("preorders").where("status", "==", "pending").get();
+    if (snap.empty) {
+      await ctx.reply("Hozircha kelgusi zakaz yo'q.");
+      return;
+    }
+    const docs = snap.docs.sort((a, b) => (a.data().deliveryDate || "").localeCompare(b.data().deliveryDate || ""));
+    for (const doc of docs) {
+      const p = doc.data();
+      const label = `${p.deliveryDate} · ${await storeName(p.storeId)}\n${await productName(p.productId)} — ${p.qty} dona${p.note ? `\n${p.note}` : ""}`;
+      await ctx.reply(label, Markup.inlineKeyboard([[Markup.button.callback("✅ Tayyor", `preorder:done:${doc.id}`)]]));
+    }
+  });
+
+  bot.action(/^preorder:done:(.+)$/, async (ctx) => {
+    const id = ctx.match[1];
+    await db.collection("preorders").doc(id).update({ status: "done" });
+    await ctx.answerCbQuery("Tayyor deb belgilandi ✅");
+    await ctx.editMessageReplyMarkup(null).catch(() => {});
+  });
+
   return {
     async handleText(ctx, s, text) {
       if (s.step === "pack.qty") {

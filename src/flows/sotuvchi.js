@@ -41,6 +41,12 @@ async function storeName(id) {
   return doc.exists ? doc.data().name : id;
 }
 
+function dateKeyOffset(offsetDays) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 /** Zayavkani qabul qilish — mobil ilovadagi confirmWorkOrder bilan bir xil tranzaksiya. */
 async function confirmWorkOrder({ workOrderId, driverUid, vehicleId, productId, qty }) {
   const date = todayKey();
@@ -285,6 +291,48 @@ function register(bot) {
     await ctx.reply("Nechta sotildi?");
   });
 
+  // ---- oldindan (kelgusi kunga) zakaz olish ----
+  bot.action("preorder:start", async (ctx) => {
+    await ctx.answerCbQuery();
+    const s = getSession(ctx.chat.id);
+    s.draft = {};
+    const stores = await listStores();
+    if (stores.length === 0) {
+      await ctx.reply("Hali do'kon yo'q — avval \"Sotuv yozish\" bo'limidan do'kon qo'shing.");
+      return;
+    }
+    const kb = grid(stores, (st) => Markup.button.callback(st.name, `preorder:store:${st.id}`));
+    await ctx.reply("Qaysi do'kon zakaz berdi?", Markup.inlineKeyboard(kb));
+  });
+
+  bot.action(/^preorder:store:(.+)$/, async (ctx) => {
+    const s = getSession(ctx.chat.id);
+    s.draft.storeId = ctx.match[1];
+    await ctx.answerCbQuery();
+    await ctx.reply("Qaysi kunga kerak?", Markup.inlineKeyboard([[
+      Markup.button.callback("Bugun", "preorder:date:0"),
+      Markup.button.callback("Ertaga", "preorder:date:1"),
+      Markup.button.callback("Indinga", "preorder:date:2"),
+    ]]));
+  });
+
+  bot.action(/^preorder:date:(\d)$/, async (ctx) => {
+    const s = getSession(ctx.chat.id);
+    s.draft.deliveryDate = dateKeyOffset(Number(ctx.match[1]));
+    await ctx.answerCbQuery();
+    const products = await listProducts();
+    const kb = grid(products, (p) => Markup.button.callback(p.name, `preorder:prod:${p.id}`));
+    await ctx.reply("Qaysi mahsulot kerak?", Markup.inlineKeyboard(kb));
+  });
+
+  bot.action(/^preorder:prod:(.+)$/, async (ctx) => {
+    const s = getSession(ctx.chat.id);
+    s.draft.productId = ctx.match[1];
+    s.step = "preorder.qty";
+    await ctx.answerCbQuery();
+    await ctx.reply("Necha dona kerak?");
+  });
+
   // ---- brak yozish ----
   bot.action("brak:start", async (ctx) => {
     await ctx.answerCbQuery();
@@ -504,6 +552,34 @@ function register(bot) {
         } else {
           await ctx.reply("Iltimos, \"📍 Joylashuvni yuborish\" tugmasini bosing yoki \"-\" deb yozing.");
         }
+        return true;
+      }
+
+      if (s.step === "preorder.qty") {
+        const qty = Number(text.replace(",", "."));
+        if (!Number.isFinite(qty) || qty <= 0) {
+          await ctx.reply("To'g'ri son kiriting.");
+          return true;
+        }
+        s.draft.qty = qty;
+        s.step = "preorder.note";
+        await ctx.reply("Izoh yozing (bo'lmasa \"-\"):");
+        return true;
+      }
+      if (s.step === "preorder.note") {
+        await db.collection("preorders").add({
+          driverUid: s.employee.uid,
+          storeId: s.draft.storeId,
+          productId: s.draft.productId,
+          qty: s.draft.qty,
+          deliveryDate: s.draft.deliveryDate,
+          note: text === "-" ? "" : text,
+          status: "pending",
+          date: todayKey(),
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        resetStep(ctx.chat.id);
+        await ctx.reply("✅ Zakaz qayd etildi.", mainMenuFor(s.employee.role));
         return true;
       }
 
