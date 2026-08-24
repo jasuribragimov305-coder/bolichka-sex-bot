@@ -232,10 +232,20 @@ function register(bot) {
     }
     s.draft = { driverLoadId: dl.id };
     const stores = await listStores();
-    const kb = grid(stores, (st) => Markup.button.callback(st.name, `sale:store:${st.id}`));
+    const preorderSnap = await db.collection("preorders").where("status", "==", "pending").get();
+    const storesWithZakaz = new Set(preorderSnap.docs.map((d) => d.data().storeId));
+    const sortedStores = [...stores].sort((a, b) => {
+      const az = storesWithZakaz.has(a.id) ? 0 : 1;
+      const bz = storesWithZakaz.has(b.id) ? 0 : 1;
+      return az !== bz ? az - bz : a.name.localeCompare(b.name);
+    });
+    const kb = grid(sortedStores, (st) => Markup.button.callback(
+      storesWithZakaz.has(st.id) ? `🔔 ${st.name}` : st.name,
+      `sale:store:${st.id}`,
+    ));
     kb.push([Markup.button.callback("➕ Yangi do'kon qo'shish", "store:new")]);
     await ctx.reply(
-      stores.length === 0 ? "Hali do'kon yo'q — yangisini qo'shing:" : "Qaysi do'konga sotdingiz?",
+      stores.length === 0 ? "Hali do'kon yo'q — yangisini qo'shing:" : "Qaysi do'konga sotdingiz? (🔔 — kutilayotgan zakaz bor)",
       Markup.inlineKeyboard(kb),
     );
   });
@@ -260,6 +270,17 @@ function register(bot) {
     if (loc) row.push(Markup.button.url("🧭 Yo'nalish", `https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}`));
     row.push(Markup.button.callback("✎ Tahrirlash", "store:edit"));
     await ctx.reply(`Tanlangan do'kon: ${store ? store.name : ""}`, Markup.inlineKeyboard([row]));
+    const zakazSnap = await db.collection("preorders")
+      .where("storeId", "==", s.draft.storeId)
+      .where("status", "==", "pending")
+      .get();
+    if (!zakazSnap.empty) {
+      const lines = await Promise.all(zakazSnap.docs.map(async (d) => {
+        const z = d.data();
+        return `${z.deliveryDate} · ${await productName(z.productId)} — ${z.qty} dona${z.note ? ` (${z.note})` : ""}`;
+      }));
+      await ctx.reply(`🔔 Bu do'konda kutilayotgan zakaz bor:\n${lines.join("\n")}`);
+    }
     const dl = await myDriverLoad(s.employee.uid);
     const named = await Promise.all(dl.items.map(async (i) => ({ productId: i.productId, name: await productName(i.productId) })));
     const kb = grid(named, (i) => Markup.button.callback(i.name, `sale:prod:${i.productId}`));
