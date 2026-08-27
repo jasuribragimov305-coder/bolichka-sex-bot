@@ -150,7 +150,7 @@ if (port) {
     }
   });
 } else {
-  bot.launch().then(() => console.log("Bolichka sex boti (uzun-so'rov rejimida) ishga tushdi."));
+  bot.launch().then(() => console.log("Bolichka boti (uzun-so'rov rejimida) ishga tushdi."));
 }
 
 process.once("SIGINT", () => bot.stop("SIGINT"));

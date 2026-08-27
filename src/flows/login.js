@@ -11,7 +11,7 @@ function register(bot) {
     }
     s.step = "login.username";
     await ctx.reply(
-      "🥐 *Bolichka sex* — xodim boti\n\nAdmin sizga bergan login va parolingiz bilan kiring.\n\nLoginni yozing:",
+      "🥐 *Bolichka* — xodim boti\n\nAdmin sizga bergan login va parolingiz bilan kiring.\n\nLoginni yozing:",
       { parse_mode: "Markdown" },
     );
   });
