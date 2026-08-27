@@ -10,10 +10,17 @@ const sotuvchi = require("./src/flows/sotuvchi");
 const kassir = require("./src/flows/kassir");
 const adminFlow = require("./src/flows/admin");
 const { runKassaCheck } = require("./src/kassaCheck");
+const { isRateLimited, clientIp, safeEqual } = require("./src/rateLimit");
 
 // Tashqi (GitHub Actions) cron shu maxfiy so'z bilan har kuni soat 20:00'da
 // /cron/kassa-check'ni chaqiradi — hech qanday pullik xizmat kerak emas.
+// Ochiq repo'da saqlangani uchun (workflow scope cheklovi tufayli boshqa
+// iloj bo'lmadi) maxfiy so'z oshkor bo'lib qolishi mumkin deb hisoblaymiz —
+// shuning uchun pastda alohida "necha daqiqada bir marta" cheklovi ham bor,
+// hatto kimdir so'zni bilsa ham suiiste'mol qila olmasin.
 const CRON_SECRET = "fccd19e4c726d4ea339cd7ee0b59485f588d86bc8bd0c872";
+const CRON_MIN_INTERVAL_MS = 10 * 60 * 1000;
+let lastCronRunAt = 0;
 
 const token = process.env.BOT_TOKEN;
 if (!token) {
@@ -85,6 +92,16 @@ const port = process.env.PORT;
 if (port) {
   const webhookPath = `/webhook/${token}`;
   const server = http.createServer(async (req, res) => {
+    // Telegram'ning o'zi webhook so'rovlarini o'z serverlaridan yuboradi —
+    // ko'p xodim bir vaqtda yozsa ham, hammasi Telegram'ning bir nechta IP
+    // manzilidan "proksi" bo'lib keladi. Shuning uchun tezlik cheklovini
+    // FAQAT webhook'dan tashqari yo'llarga qo'llaymiz — aks holda gavjum
+     // paytda haqiqiy xabarlar bekor qilinib qolishi mumkin edi.
+    if (req.url !== webhookPath && isRateLimited(clientIp(req))) {
+      res.writeHead(429, { "Content-Type": "text/plain" });
+      res.end("Too many requests");
+      return;
+    }
     if (req.url === "/" || req.url === "/health") {
       res.writeHead(200, { "Content-Type": "text/plain" });
       res.end("ok");
@@ -95,11 +112,19 @@ if (port) {
     }
     if (req.url.startsWith("/cron/kassa-check")) {
       const reqUrl = new URL(req.url, `http://${req.headers.host}`);
-      if (reqUrl.searchParams.get("secret") !== CRON_SECRET) {
+      const providedSecret = reqUrl.searchParams.get("secret") || "";
+      if (!safeEqual(providedSecret, CRON_SECRET)) {
         res.writeHead(403);
         res.end();
         return;
       }
+      const now = Date.now();
+      if (now - lastCronRunAt < CRON_MIN_INTERVAL_MS) {
+        res.writeHead(429, { "Content-Type": "text/plain" });
+        res.end("Yaqinda ishga tushirilgan, biroz kuting");
+        return;
+      }
+      lastCronRunAt = now;
       try {
         await runKassaCheck(bot);
         res.writeHead(200, { "Content-Type": "text/plain" });

@@ -7,7 +7,7 @@ admin.initializeApp({
 
 async function main() {
   await admin.firestore().collection("config").doc("appVersion").set({
-    latestBuild: 6,
+    latestBuild: 7,
     downloadUrl: "https://raw.githubusercontent.com/jasuribragimov305-coder/bolichka-sex-bot/main/releases/bolichka-sex.apk",
   });
   console.log("Written.");
