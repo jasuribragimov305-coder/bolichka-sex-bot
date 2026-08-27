@@ -137,11 +137,9 @@ function register(bot) {
     return doc.exists ? doc.data().name : id;
   }
 
-  bot.action("preorder:pool", async (ctx) => {
-    await ctx.answerCbQuery();
-    const snap = await db.collection("preorders").where("status", "==", "pending").get();
+  async function listPreorders(ctx, snap, emptyText) {
     if (snap.empty) {
-      await ctx.reply("Hozircha kelgusi zakaz yo'q.");
+      await ctx.reply(emptyText);
       return;
     }
     const docs = snap.docs.sort((a, b) => (a.data().deliveryDate || "").localeCompare(b.data().deliveryDate || ""));
@@ -150,6 +148,25 @@ function register(bot) {
       const label = `${p.deliveryDate} · ${await storeName(p.storeId)}\n${await productName(p.productId)} — ${p.qty} dona${p.note ? `\n${p.note}` : ""}`;
       await ctx.reply(label, Markup.inlineKeyboard([[Markup.button.callback("✅ Tayyor", `preorder:done:${doc.id}`)]]));
     }
+  }
+
+  bot.action("preorder:mine", async (ctx) => {
+    await ctx.answerCbQuery();
+    const s = getSession(ctx.chat.id);
+    const snap = await db.collection("preorders")
+      .where("status", "==", "pending")
+      .where("assignedFasovkachiUid", "==", s.employee.uid)
+      .get();
+    await listPreorders(ctx, snap, "Sizga majburiy tayinlangan zakaz yo'q.");
+  });
+
+  bot.action("preorder:pool", async (ctx) => {
+    await ctx.answerCbQuery();
+    const snap = await db.collection("preorders")
+      .where("status", "==", "pending")
+      .where("assignedFasovkachiUid", "==", null)
+      .get();
+    await listPreorders(ctx, snap, "Hozircha ochiq zakaz yo'q.");
   });
 
   bot.action(/^preorder:done:(.+)$/, async (ctx) => {

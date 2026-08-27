@@ -18,7 +18,8 @@ function mainMenuFor(role) {
     rows.push([Markup.button.callback("🚚 Yuklash yozish", "load:start")]);
     rows.push([Markup.button.callback("📋 Menga tayinlangan zayavkalar", "wo:mine")]);
     rows.push([Markup.button.callback("🏭 Sotuvchilar so'rovlari", "wo:pool")]);
-    rows.push([Markup.button.callback("🗓 Kelgusi zakazlar", "preorder:pool")]);
+    rows.push([Markup.button.callback("🔴 Menga tayinlangan zakazlar", "preorder:mine")]);
+    rows.push([Markup.button.callback("🗓 Ochiq zakazlar", "preorder:pool")]);
     rows.push([Markup.button.callback("📊 Bugungi natijam", "pack:today")]);
   } else if (role === "haydovchi") {
     rows.push([Markup.button.callback("🚗 Bugungi mashinam", "drv:vehicle")]);

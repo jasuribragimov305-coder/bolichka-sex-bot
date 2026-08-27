@@ -596,6 +596,7 @@ function register(bot) {
           deliveryDate: s.draft.deliveryDate,
           note: text === "-" ? "" : text,
           status: "pending",
+          assignedFasovkachiUid: null,
           date: todayKey(),
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
