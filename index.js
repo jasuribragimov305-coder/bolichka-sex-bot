@@ -11,6 +11,7 @@ const kassir = require("./src/flows/kassir");
 const adminFlow = require("./src/flows/admin");
 const { runKassaCheck } = require("./src/kassaCheck");
 const { isRateLimited, clientIp, safeEqual } = require("./src/rateLimit");
+const { snapToRoads } = require("./src/roadsSnap");
 
 // Tashqi (GitHub Actions) cron shu maxfiy so'z bilan har kuni soat 20:00'da
 // /cron/kassa-check'ni chaqiradi — hech qanday pullik xizmat kerak emas.
@@ -134,6 +135,37 @@ if (port) {
         res.writeHead(500);
         res.end("error");
       }
+      return;
+    }
+    if (req.url === "/api/snap-to-roads") {
+      // Admin sayt (bolichka-sex.web.app) brauzerdan chaqiradi — CORS kerak.
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      if (req.method === "OPTIONS") {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+      if (req.method !== "POST") {
+        res.writeHead(405);
+        res.end();
+        return;
+      }
+      let body = "";
+      req.on("data", (chunk) => { body += chunk; });
+      req.on("end", async () => {
+        try {
+          const { points } = JSON.parse(body || "{}");
+          const snapped = await snapToRoads(points);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ points: snapped }));
+        } catch (err) {
+          console.error("Yo'lga moslashtirish xatoligi:", err);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ points: [] }));
+        }
+      });
       return;
     }
     res.writeHead(404);
