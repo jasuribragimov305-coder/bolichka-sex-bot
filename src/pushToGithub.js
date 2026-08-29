@@ -7,6 +7,12 @@ const path = require("path");
 // bilan bir xil mantiq, faqat qayta ishlatish uchun funksiya sifatida.
 const dir = path.resolve(__dirname, "..");
 
+// Render'ning deploy jarayoni repo'ni oddiy "git clone origin ..." dan
+// boshqacha usulda tortadi — natijada .git/config'da remote.origin.url
+// bo'lmasligi mumkin ("remote OR url" xatoligi shundan). Shuning uchun
+// remote nomiga tayanmasdan, to'g'ridan-to'g'ri URL beramiz.
+const REPO_URL = "https://github.com/jasuribragimov305-coder/bolichka-sex-bot.git";
+
 // isomorphic-git/http/node (simple-get)ning ichki timeout'i katta fayl
 // (masalan APK) yuklashda uzilib qolgani uchun — Node'ning o'z global
 // fetch()'iga asoslangan moslashtirilgan http klient.
@@ -41,17 +47,21 @@ async function commitAndPush(message) {
   await git.add({ fs, dir, filepath: "." });
   const status = await git.statusMatrix({ fs, dir });
   const changed = status.some(([, head, workdir, stage]) => head !== workdir || workdir !== stage);
-  if (!changed) return false;
-  await git.commit({
-    fs, dir, message,
-    author: { name: "Bolichka bot", email: "jasuribragimov305@gmail.com" },
-  });
+  if (changed) {
+    await git.commit({
+      fs, dir, message,
+      author: { name: "Bolichka bot", email: "jasuribragimov305@gmail.com" },
+    });
+  }
+  // Har doim push qilamiz (nafaqat "changed" bo'lganda) — oldingi urinishda
+  // commit muvaffaqiyatli bo'lib, faqat push muvaffaqiyatsiz bo'lgan bo'lsa
+  // (masalan tarmoq xatoligi), shu commit push qilinmay qolib ketmasin.
   await git.push({
     fs, http: httpClient, dir,
-    remote: "origin", ref: "main",
+    url: REPO_URL, ref: "main",
     onAuth: () => ({ username: token }),
   });
-  return true;
+  return changed;
 }
 
 module.exports = { commitAndPush };
