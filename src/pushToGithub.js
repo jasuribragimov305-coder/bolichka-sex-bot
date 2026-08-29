@@ -9,9 +9,11 @@ const dir = path.resolve(__dirname, "..");
 
 // Render'ning deploy jarayoni repo'ni oddiy "git clone origin ..." dan
 // boshqacha usulda tortadi — natijada .git/config'da remote.origin.url
-// bo'lmasligi mumkin ("remote OR url" xatoligi shundan). Shuning uchun
-// remote nomiga tayanmasdan, to'g'ridan-to'g'ri URL beramiz.
+// bo'lmasligi (yoki HEAD "main" branch'iga bog'lanmagan/detached bo'lishi)
+// mumkin. Shuning uchun remote nomiga tayanmasdan to'g'ridan-to'g'ri URL
+// beramiz, va commit/push'ni aniq "main" branch'iga qarab bajaramiz.
 const REPO_URL = "https://github.com/jasuribragimov305-coder/bolichka-sex-bot.git";
+const BRANCH = "main";
 
 // isomorphic-git/http/node (simple-get)ning ichki timeout'i katta fayl
 // (masalan APK) yuklashda uzilib qolgani uchun — Node'ning o'z global
@@ -38,29 +40,41 @@ const httpClient = {
   },
 };
 
-/** Ishchi papkadagi barcha o'zgarishlarni commit qilib GitHub'ga push qiladi.
- * `process.env.GH_PAT` kerak (Render'da doimiy environment variable
- * sifatida sozlangan bo'lishi kerak). O'zgarish bo'lmasa `false` qaytaradi. */
-async function commitAndPush(message) {
+/** Berilgan fayl(lar)ni (yoki hammasini, agar berilmasa) commit qilib
+ * GitHub'ga push qiladi. `process.env.GH_PAT` kerak (Render'da doimiy
+ * environment variable sifatida sozlangan bo'lishi kerak).
+ * `filepaths` berilsa faqat o'sha fayllar `git add` qilinadi — butun
+ * repo (katta APK bilan birga) qayta skanerlanmaydi, tezroq ishlaydi. */
+async function commitAndPush(message, filepaths) {
   const token = process.env.GH_PAT;
   if (!token) throw new Error("GH_PAT environment variable sozlanmagan");
-  await git.add({ fs, dir, filepath: "." });
-  const status = await git.statusMatrix({ fs, dir });
+
+  for (const fp of filepaths ?? ["."]) {
+    await git.add({ fs, dir, filepath: fp });
+  }
+  const status = await git.statusMatrix({ fs, dir, filepaths: filepaths ?? undefined });
   const changed = status.some(([, head, workdir, stage]) => head !== workdir || workdir !== stage);
   if (changed) {
+    // `ref: BRANCH` — HEAD qaysi holatda bo'lishidan qat'iy nazar (detached
+    // bo'lsa ham) commit aniq "refs/heads/main"ga yoziladi.
     await git.commit({
-      fs, dir, message,
+      fs, dir, message, ref: BRANCH,
       author: { name: "Bolichka bot", email: "jasuribragimov305@gmail.com" },
     });
   }
   // Har doim push qilamiz (nafaqat "changed" bo'lganda) — oldingi urinishda
-  // commit muvaffaqiyatli bo'lib, faqat push muvaffaqiyatsiz bo'lgan bo'lsa
-  // (masalan tarmoq xatoligi), shu commit push qilinmay qolib ketmasin.
-  await git.push({
-    fs, http: httpClient, dir,
-    url: REPO_URL, ref: "main",
-    onAuth: () => ({ username: token }),
-  });
+  // commit muvaffaqiyatli bo'lib, faqat push muvaffaqiyatsiz bo'lgan bo'lsa,
+  // shu commit push qilinmay qolib ketmasin.
+  try {
+    await git.push({
+      fs, http: httpClient, dir,
+      url: REPO_URL, ref: BRANCH, remoteRef: BRANCH,
+      onAuth: () => ({ username: token }),
+    });
+  } catch (err) {
+    console.error("GitHub'ga push qilishda xatolik:", err);
+    throw new Error(`GitHub push xatoligi: ${err.message || err}`);
+  }
   return changed;
 }
 

@@ -37,7 +37,9 @@ async function uploadProductImage({ idToken, filename, contentBase64 }) {
   const safeName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
   fs.writeFileSync(path.join(IMAGES_DIR, safeName), buffer);
 
-  await commitAndPush(`Mahsulot rasmi qo'shildi: ${safeName}`);
+  // Faqat shu bitta faylni qo'shamiz — butun repo (katta APK bilan birga)
+  // qayta skanerlanmasin deb, tezroq bo'lishi uchun.
+  await commitAndPush(`Mahsulot rasmi qo'shildi: ${safeName}`, [`product-images/${safeName}`]);
 
   return `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/product-images/${safeName}`;
 }
